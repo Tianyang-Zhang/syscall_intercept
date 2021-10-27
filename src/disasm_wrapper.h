@@ -51,6 +51,8 @@
 struct intercept_disasm_result {
 	const unsigned char *address;
 
+	bool is_mov;
+
 	bool is_set;
 
 	bool is_syscall;

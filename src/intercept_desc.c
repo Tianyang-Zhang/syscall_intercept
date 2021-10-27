@@ -308,9 +308,6 @@ find_jumps_in_section_syms(struct intercept_desc *desc, Elf64_Shdr *section,
 		if (syms[i].st_shndx != desc->text_section_index)
 			continue; /* it is not in the text section */
 
-		debug_dump("jump target: %lx\n",
-		    (unsigned long)syms[i].st_value);
-
 		unsigned char *address = desc->base_addr + syms[i].st_value;
 
 		/* a function entry point in .text, mark it */
@@ -355,17 +352,14 @@ find_jumps_in_section_rela(struct intercept_desc *desc, Elf64_Shdr *section,
 		switch (ELF64_R_TYPE(syms[i].r_info)) {
 			case R_X86_64_RELATIVE:
 			case R_X86_64_RELATIVE64:
-				/* Relocation type: "Adjust by program base" */
-
-				debug_dump("jump target: %lx\n",
-				    (unsigned long)syms[i].r_addend);
-
+			{
 				unsigned char *address =
 				    desc->base_addr + syms[i].r_addend;
 
 				mark_jump(desc, address);
 
 				break;
+			}
 		}
 	}
 }
@@ -461,7 +455,7 @@ crawl_text(struct intercept_desc *desc)
 	 * disassembling the code instruction by instruction in the
 	 * while loop below.
 	 */
-	struct intercept_disasm_result prevs[3] = {{0, }};
+	struct intercept_disasm_result prevs[8] = {{0, }};
 
 	/*
 	 * How many previous instructions were decoded before this one,
@@ -516,7 +510,22 @@ crawl_text(struct intercept_desc *desc)
 		 * These implausible edge cases don't seem to be very important
 		 * right now.
 		 */
-		if (has_prevs >= 1 && prevs[2].is_syscall) {
+		bool is_libc_or_go_syscall6 = false;
+		if (has_prevs == 8) {
+			bool prev_all_mov = true;
+			/* last one should be syscall */
+			for (unsigned i = 0; i < has_prevs - 1; i++) {
+				if (prevs[i].is_mov == false) {
+					prev_all_mov = false;
+					break;
+				}
+			}
+			if (prev_all_mov) {
+				is_libc_or_go_syscall6 =
+					(prevs[7].is_syscall == true);
+			}
+		}
+		if (is_libc_or_go_syscall6) {
 			struct patch_desc *patch = add_new_patch(desc);
 
 			patch->containing_lib_path = desc->path;
@@ -535,8 +544,13 @@ crawl_text(struct intercept_desc *desc)
 
 		prevs[0] = prevs[1];
 		prevs[1] = prevs[2];
-		prevs[2] = result;
-		if (has_prevs < 2)
+		prevs[2] = prevs[3];
+		prevs[3] = prevs[4];
+		prevs[4] = prevs[5];
+		prevs[5] = prevs[6];
+		prevs[6] = prevs[7];
+		prevs[7] = result;
+		if (has_prevs < 8)
 			++has_prevs;
 
 		code += result.length;

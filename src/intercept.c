@@ -72,7 +72,7 @@ void (*intercept_hook_point_clone_child)(void)
 void (*intercept_hook_point_clone_parent)(long)
 	__attribute__((visibility("default")));
 
-bool debug_dumps_on;
+bool debug_dumps_on = true;
 
 void
 debug_dump(const char *fmt, ...)
@@ -82,6 +82,26 @@ debug_dump(const char *fmt, ...)
 
 	if (!debug_dumps_on)
 		return;
+
+	va_start(ap, fmt);
+	len = vsnprintf(NULL, 0, fmt, ap);
+	va_end(ap);
+
+	if (len <= 0)
+		return;
+
+	char buf[len + 1];
+
+	va_start(ap, fmt);
+	len = vsprintf(buf, fmt, ap);
+	va_end(ap);
+
+	syscall_no_intercept(SYS_write, 2, buf, len);
+}
+
+void log_dump(const char *fmt, ...) {
+	int len;
+	va_list ap;
 
 	va_start(ap, fmt);
 	len = vsnprintf(NULL, 0, fmt, ap);
@@ -343,6 +363,7 @@ should_patch_object(uintptr_t addr, const char *path)
 	static const char libc[] = "libc";
 	static const char pthr[] = "libpthread";
 	static const char caps[] = "libcapstone";
+	static const char preload[] = "preloadlib";
 
 	if (is_vdso(addr, path)) {
 		debug_dump(" - skipping: is_vdso\n");
@@ -362,6 +383,11 @@ should_patch_object(uintptr_t addr, const char *path)
 
 	if (str_match(name, len, caps)) {
 		debug_dump(" - skipping: matches capstone\n");
+		return false;
+	}
+
+	if (str_match(name, len, preload)) {
+		log_dump(" - skipping: matches preloadlib\n");
 		return false;
 	}
 
@@ -411,16 +437,18 @@ analyze_object(struct dl_phdr_info *info, size_t size, void *data)
 	(void) size;
 	const char *path;
 
-	debug_dump("analyze_object called on \"%s\" at 0x%016" PRIxPTR "\n",
+	log_dump("analyze_object called on \"%s\" at 0x%016" PRIxPTR "\n",
 	    info->dlpi_name, info->dlpi_addr);
 
 	if ((path = get_object_path(info)) == NULL)
 		return 0;
 
-	debug_dump("analyze %s\n", path);
-
-	if (!should_patch_object(info->dlpi_addr, path))
+	if (!should_patch_object(info->dlpi_addr, path)) {
+		log_dump("SKIP LIB %s\n", path);
 		return 0;
+	} else {
+		log_dump("PATCHING %s\n", path);
+	}
 
 	struct intercept_desc *patches = allocate_next_obj_desc();
 
@@ -477,8 +505,10 @@ intercept(int argc, char **argv)
 	(void) argc;
 	cmdline = argv[0];
 
-	if (!syscall_hook_in_process_allowed())
+	if (!syscall_hook_in_process_allowed()) {
+		log_dump("failed to check hook allowed: %s\n", argv[0]);
 		return;
+	}
 
 	vdso_addr = (void *)(uintptr_t)getauxval(AT_SYSINFO_EHDR);
 	debug_dumps_on = getenv("INTERCEPT_DEBUG_DUMP") != NULL;
@@ -489,8 +519,12 @@ intercept(int argc, char **argv)
 	init_patcher();
 
 	dl_iterate_phdr(analyze_object, NULL);
-	if (!libc_found)
+	if (!libc_found) {
+		log_dump("libc not found\n");
 		xabort("libc not found");
+	} else {
+		log_dump("found libc\n");
+	}
 
 	for (unsigned i = 0; i < objs_count; ++i) {
 		if (objs[i].count > 0 && is_asm_wrapper_space_full())

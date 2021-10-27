@@ -272,6 +272,15 @@ intercept_disasm_next_instruction(struct intercept_disasm_context *context,
 		case X86_INS_NOP:
 			result.is_nop = true;
 			break;
+		/* only record MOV, MOVL and MOVQ for syscall */
+		case X86_INS_MOV:
+		case X86_INS_MOVLHPS:
+		case X86_INS_MOVLPD:
+		case X86_INS_MOVLPS:
+		case X86_INS_MOVQ:
+		case X86_INS_MOVQ2DQ:
+			result.is_mov = true;
+			break;
 		default:
 			result.is_jump = false;
 			break;
