@@ -363,7 +363,6 @@ should_patch_object(uintptr_t addr, const char *path)
 	static const char libc[] = "libc";
 	static const char pthr[] = "libpthread";
 	static const char caps[] = "libcapstone";
-	static const char preload[] = "preloadlib";
 
 	if (is_vdso(addr, path)) {
 		debug_dump(" - skipping: is_vdso\n");
@@ -386,11 +385,6 @@ should_patch_object(uintptr_t addr, const char *path)
 		return false;
 	}
 
-	if (str_match(name, len, preload)) {
-		log_dump(" - skipping: matches preloadlib\n");
-		return false;
-	}
-
 	if (str_match(name, len, libc)) {
 		debug_dump(" - libc found\n");
 		libc_found = true;
@@ -402,6 +396,15 @@ should_patch_object(uintptr_t addr, const char *path)
 
 	if (str_match(name, len, pthr)) {
 		debug_dump(" - libpthread found\n");
+		return true;
+	}
+
+	char *app = getenv("INTERCEPT_HOOK_CMDLINE_FILTER");
+	if (app == NULL)
+		return false;
+	log_dump("App filter: %s, curr name: %s, len %lu\n",
+		app, name, strlen(name));
+	if (str_match(name, strlen(name), app)) {
 		return true;
 	}
 

@@ -529,8 +529,8 @@ crawl_text(struct intercept_desc *desc)
 			struct patch_desc *patch = add_new_patch(desc);
 
 			patch->containing_lib_path = desc->path;
-			patch->preceding_ins_2 = prevs[0];
-			patch->preceding_ins = prevs[1];
+			patch->preceding_ins_2 = prevs[5];
+			patch->preceding_ins = prevs[6];
 			patch->following_ins = result;
 			patch->syscall_addr = code - SYSCALL_INS_SIZE;
 
