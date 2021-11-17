@@ -99,6 +99,15 @@ debug_dump(const char *fmt, ...)
 	syscall_no_intercept(SYS_write, 2, buf, len);
 }
 
+int dump_log_fd = -1;
+
+void open_log_file() {
+	int flags = O_CREAT | O_RDWR | O_APPEND | O_TRUNC;
+
+	dump_log_fd = (int)syscall_no_intercept(SYS_open,
+		"/home/tomz/intercept/dump_log.log", flags, 0700);
+}
+
 void log_dump(const char *fmt, ...) {
 	int len;
 	va_list ap;
@@ -116,7 +125,8 @@ void log_dump(const char *fmt, ...) {
 	len = vsprintf(buf, fmt, ap);
 	va_end(ap);
 
-	syscall_no_intercept(SYS_write, 2, buf, len);
+	int fd = dump_log_fd >= 0 ? dump_log_fd : 2;
+	syscall_no_intercept(SYS_write, fd, buf, len);
 }
 
 static void log_header(void);
@@ -363,6 +373,7 @@ should_patch_object(uintptr_t addr, const char *path)
 	static const char libc[] = "libc";
 	static const char pthr[] = "libpthread";
 	static const char caps[] = "libcapstone";
+	static const char event[] = "libevent";
 
 	if (is_vdso(addr, path)) {
 		debug_dump(" - skipping: is_vdso\n");
@@ -370,7 +381,7 @@ should_patch_object(uintptr_t addr, const char *path)
 	}
 
 	const char *name = get_lib_short_name(path);
-	size_t len = strcspn(name, "-.");
+	size_t len = strcspn(name, "-._");
 
 	if (len == 0)
 		return false;
@@ -385,6 +396,11 @@ should_patch_object(uintptr_t addr, const char *path)
 		return false;
 	}
 
+	if (str_match(name, len, event)) {
+		debug_dump(" - matches libevent\n");
+		return true;
+	}
+
 	if (str_match(name, len, libc)) {
 		debug_dump(" - libc found\n");
 		libc_found = true;
@@ -396,7 +412,7 @@ should_patch_object(uintptr_t addr, const char *path)
 
 	if (str_match(name, len, pthr)) {
 		debug_dump(" - libpthread found\n");
-		return true;
+		return false;
 	}
 
 	char *app = getenv("INTERCEPT_HOOK_CMDLINE_FILTER");
@@ -524,7 +540,7 @@ intercept(int argc, char **argv)
 	dl_iterate_phdr(analyze_object, NULL);
 	if (!libc_found) {
 		log_dump("libc not found\n");
-		xabort("libc not found");
+		// xabort("libc not found");
 	} else {
 		log_dump("found libc\n");
 	}

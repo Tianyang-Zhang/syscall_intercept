@@ -511,18 +511,22 @@ crawl_text(struct intercept_desc *desc)
 		 * right now.
 		 */
 		bool is_libc_or_go_syscall6 = false;
-		if (has_prevs == 8) {
-			bool prev_all_mov = true;
-			/* last one should be syscall */
-			for (unsigned i = 0; i < has_prevs - 1; i++) {
-				if (prevs[i].is_mov == false) {
-					prev_all_mov = false;
-					break;
-				}
+		unsigned mov_count = 0;
+		for (int i = 6; i >= (int)(8 - has_prevs); i--) {
+			if (prevs[i].is_mov == false) {
+				break;
 			}
-			if (prev_all_mov) {
-				is_libc_or_go_syscall6 =
-					(prevs[7].is_syscall == true);
+			mov_count++;
+		}
+
+		if (prevs[7].is_syscall) {
+			if (mov_count >= 2) {
+				is_libc_or_go_syscall6 = true;
+				log_dump("Patched a syscall with %u args\n",
+					mov_count);
+			} else {
+				log_dump("Skipped syscall with %u args\n",
+					mov_count);
 			}
 		}
 		if (is_libc_or_go_syscall6) {
